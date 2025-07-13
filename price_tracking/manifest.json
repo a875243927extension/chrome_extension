@@ -3,6 +3,7 @@
   "name": "價格追蹤器",
   "version": "1.0",
   "description": "追蹤網頁商品價格變化",
+  
   "permissions": [
     "storage",
     "contextMenus",
@@ -11,19 +12,23 @@
     "alarms",
     "notifications"
   ],
+  
   "host_permissions": [
-    "http://*/*",
-    "https://*/*"
+    "<all_urls>"
   ],
+  
   "background": {
     "service_worker": "background.js"
   },
+  
   "content_scripts": [
     {
-      "matches": ["http://*/*", "https://*/*"],
-      "js": ["content.js"]
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_end"
     }
   ],
+  
   "action": {
     "default_popup": "popup.html",
     "default_title": "價格追蹤器"

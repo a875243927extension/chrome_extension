@@ -2,56 +2,413 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <link rel="stylesheet" href="popup.css">
+  <style>
+    body {
+      width: 400px;
+      min-height: 500px;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 14px;
+      background-color: #f5f5f5;
+    }
+    
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 16px;
+      text-align: center;
+    }
+    
+    .header h1 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+    }
+    
+    .container {
+      padding: 16px;
+    }
+    
+    .controls {
+      background: white;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 16px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .control-group {
+      margin-bottom: 12px;
+    }
+    
+    .control-group:last-child {
+      margin-bottom: 0;
+    }
+    
+    .control-label {
+      display: block;
+      margin-bottom: 4px;
+      font-weight: 500;
+      color: #333;
+    }
+    
+    .btn {
+      background: #667eea;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: background-color 0.2s;
+    }
+    
+    .btn:hover {
+      background: #5a6fd8;
+    }
+    
+    .btn:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    
+    .btn-small {
+      padding: 4px 8px;
+      font-size: 12px;
+    }
+    
+    .btn-secondary {
+      background: #6c757d;
+    }
+    
+    .btn-secondary:hover {
+      background: #5a6268;
+    }
+    
+    .btn-danger {
+      background: #dc3545;
+    }
+    
+    .btn-danger:hover {
+      background: #c82333;
+    }
+    
+    .btn-full {
+      width: 100%;
+    }
+    
+    .toggle-container {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .toggle {
+      position: relative;
+      width: 44px;
+      height: 24px;
+    }
+    
+    .toggle input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #ccc;
+      transition: .4s;
+      border-radius: 24px;
+    }
+    
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 18px;
+      width: 18px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      transition: .4s;
+      border-radius: 50%;
+    }
+    
+    input:checked + .slider {
+      background-color: #667eea;
+    }
+    
+    input:checked + .slider:before {
+      transform: translateX(20px);
+    }
+    
+    select {
+      padding: 6px 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      background: white;
+      font-size: 14px;
+    }
+    
+    .status-text {
+      font-size: 12px;
+      color: #666;
+      margin-top: 4px;
+    }
+    
+    /* 價格提醒區域 */
+    .alerts-section {
+      background: #fff3cd;
+      border: 1px solid #ffeaa7;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 16px;
+      display: none;
+    }
+    
+    .alerts-title {
+      font-weight: 600;
+      color: #856404;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .alert-item {
+      background: white;
+      border: 1px solid #ffeaa7;
+      border-radius: 6px;
+      padding: 12px;
+      margin-bottom: 8px;
+    }
+    
+    .alert-item:last-child {
+      margin-bottom: 0;
+    }
+    
+    .alert-title {
+      font-weight: 500;
+      color: #333;
+      margin-bottom: 4px;
+      font-size: 13px;
+    }
+    
+    .alert-prices {
+      font-size: 12px;
+      color: #666;
+      margin-bottom: 8px;
+    }
+    
+    .items-list {
+      background: white;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .item {
+      border-bottom: 1px solid #eee;
+      padding: 16px;
+    }
+    
+    .item:last-child {
+      border-bottom: none;
+    }
+    
+    .item-header {
+      margin-bottom: 8px;
+    }
+    
+    .item-header.alert-triggered {
+      background: #fff3cd;
+      margin: -16px -16px 8px -16px;
+      padding: 12px 16px;
+      border-left: 4px solid #ffc107;
+    }
+    
+    .item-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+    
+    .item-title a {
+      color: #333;
+      text-decoration: none;
+      font-weight: 500;
+      flex: 1;
+    }
+    
+    .item-title a:hover {
+      color: #667eea;
+      text-decoration: underline;
+    }
+    
+    .alert-badge {
+      background: #ffc107;
+      color: #856404;
+      font-size: 12px;
+      padding: 2px 6px;
+      border-radius: 10px;
+      font-weight: 600;
+    }
+    
+    .item-domain {
+      font-size: 12px;
+      color: #666;
+    }
+    
+    .price-info {
+      margin-bottom: 12px;
+    }
+    
+    .current-price {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    
+    .price {
+      color: #667eea;
+    }
+    
+    .price-change {
+      font-size: 14px;
+      font-weight: 500;
+    }
+    
+    .price-up {
+      color: #dc3545;
+    }
+    
+    .price-down {
+      color: #28a745;
+    }
+    
+    .price-same {
+      color: #6c757d;
+    }
+    
+    .target-price {
+      font-size: 14px;
+      color: #666;
+      margin-top: 4px;
+    }
+    
+    .item-details {
+      margin-bottom: 12px;
+      font-size: 12px;
+      color: #666;
+    }
+    
+    .detail-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 2px;
+    }
+    
+    .selector {
+      font-family: monospace;
+      background: #f8f9fa;
+      padding: 1px 4px;
+      border-radius: 2px;
+    }
+    
+    .item-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: #666;
+      line-height: 1.5;
+    }
+    
+    .message {
+      padding: 12px 16px;
+      margin: 0 0 16px 0;
+      border-radius: 4px;
+      font-size: 14px;
+      font-weight: 500;
+    }
+    
+    .message-success {
+      background: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+    }
+    
+    .message-error {
+      background: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+    }
+    
+    .message-info {
+      background: #d1ecf1;
+      color: #0c5460;
+      border: 1px solid #bee5eb;
+    }
+  </style>
 </head>
 <body>
   <div class="header">
     <h1>價格追蹤器</h1>
-    <div class="header-buttons">
-      <button id="refreshAll" title="刷新所有價格">🔄</button>
-      <button id="autoRefreshBtn" title="自動更新設定">⏰</button>
-      <button id="clearAll" title="清空所有追蹤">🗑️</button>
-      <button id="exportData" title="匯出資料">📤</button>
-      <button id="importData" title="匯入資料">📥</button>
-    </div>
   </div>
   
-  <!-- 自動更新設定面板 -->
-  <div id="autoRefreshPanel" class="auto-refresh-panel" style="display: none;">
-    <div class="panel-header">
-      <h3>自動更新設定</h3>
-      <button id="closePanel" class="close-btn">✕</button>
-    </div>
-    <div class="panel-content">
-      <label class="checkbox-label">
-        <input type="checkbox" id="enableAutoRefresh">
-        <span>啟用自動更新</span>
-      </label>
-      <div class="time-setting">
-        <label for="refreshInterval">更新間隔 (小時):</label>
-        <input type="number" id="refreshInterval" min="0.1" max="24" step="0.1" value="1">
+  <div class="container">
+    <!-- 價格提醒區域 -->
+    <div id="alertsSection" class="alerts-section">
+      <div class="alerts-title">
+        🔔 價格提醒
       </div>
-      <div class="panel-buttons">
-        <button id="saveAutoRefresh" class="save-btn">儲存</button>
-        <button id="cancelAutoRefresh" class="cancel-btn">取消</button>
+      <div id="alertsList"></div>
+    </div>
+    
+    <!-- 控制面板 -->
+    <div class="controls">
+      <div class="control-group">
+        <button id="refreshAll" class="btn btn-full">刷新所有價格</button>
       </div>
-      <div id="autoRefreshStatus" class="auto-refresh-status"></div>
+      
+      <div class="control-group">
+        <label class="control-label">自動更新</label>
+        <div class="toggle-container">
+          <label class="toggle">
+            <input type="checkbox" id="autoRefreshToggle">
+            <span class="slider"></span>
+          </label>
+          <select id="intervalSelect">
+            <option value="0.25">每 15 分鐘</option>
+            <option value="0.5">每 30 分鐘</option>
+            <option value="1">每 1 小時</option>
+            <option value="2">每 2 小時</option>
+            <option value="3">每 3小時</option>
+            <option value="6">每 6 小時</option>
+            <option value="12">每 12 小時</option>
+            <option value="24">每 24 小時</option>
+          </select>
+        </div>
+        <div id="autoRefreshStatus" class="status-text">自動更新已停用</div>
+      </div>
+    </div>
+    
+    <!-- 追蹤項目列表 -->
+    <div id="itemsList" class="items-list">
+      <div class="empty-state">載入中...</div>
     </div>
   </div>
-  
-  <div class="stats">
-    <span id="itemCount">0 個追蹤項目</span>
-    <span id="refreshStatus" class="refresh-status"></span>
-  </div>
-  
-  <div id="trackingList" class="tracking-list">
-    <div id="emptyState" class="empty-state">
-      <p>尚未追蹤任何價格</p>
-      <p>在網頁上反白選取價格，然後右鍵選擇「加入價格追蹤」</p>
-    </div>
-  </div>
-  
-  <input type="file" id="importFile" accept=".json" style="display: none;">
   
   <script src="popup.js"></script>
 </body>

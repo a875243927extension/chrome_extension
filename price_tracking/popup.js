@@ -1,613 +1,507 @@
-let autoRefreshInterval = null;
-
-document.addEventListener('DOMContentLoaded', function() {
-  loadTrackingItems();
-  loadAutoRefreshSettings();
+document.addEventListener('DOMContentLoaded', async function() {
+  const itemsList = document.getElementById('itemsList');
+  const refreshAllBtn = document.getElementById('refreshAll');
+  const autoRefreshToggle = document.getElementById('autoRefreshToggle');
+  const intervalSelect = document.getElementById('intervalSelect');
+  const autoRefreshStatus = document.getElementById('autoRefreshStatus');
+  const alertsSection = document.getElementById('alertsSection');
+  const alertsList = document.getElementById('alertsList');
   
-  // 綁定事件監聽器
-  document.getElementById('refreshAll').addEventListener('click', refreshAllPrices);
-  document.getElementById('autoRefreshBtn').addEventListener('click', toggleAutoRefreshPanel);
-  document.getElementById('clearAll').addEventListener('click', clearAllTracking);
-  document.getElementById('exportData').addEventListener('click', exportData);
-  document.getElementById('importData').addEventListener('click', () => {
-    document.getElementById('importFile').click();
+  // 載入並顯示追蹤項目
+  await loadTrackingItems();
+  
+  // 載入自動更新設置
+  await loadAutoRefreshSettings();
+  
+  // 檢查並顯示價格提醒
+  await checkAndDisplayAlerts();
+  
+  // 刷新所有價格按鈕
+  refreshAllBtn.addEventListener('click', async function() {
+    this.disabled = true;
+    this.textContent = '更新中...';
+    
+    try {
+      const response = await chrome.runtime.sendMessage({ action: "refreshAllPrices" });
+      
+      if (response.success) {
+        showMessage(`更新完成！${response.message}`, 'success');
+        await loadTrackingItems();
+        await checkAndDisplayAlerts();
+      } else {
+        showMessage('更新失敗: ' + response.error, 'error');
+      }
+    } catch (error) {
+      showMessage('更新失敗: ' + error.message, 'error');
+    }
+    
+    this.disabled = false;
+    this.textContent = '刷新所有價格';
   });
-  document.getElementById('importFile').addEventListener('change', importData);
   
-  // 自動更新面板事件
-  document.getElementById('closePanel').addEventListener('click', hideAutoRefreshPanel);
-  document.getElementById('saveAutoRefresh').addEventListener('click', saveAutoRefreshSettings);
-  document.getElementById('cancelAutoRefresh').addEventListener('click', hideAutoRefreshPanel);
-  document.getElementById('enableAutoRefresh').addEventListener('change', toggleAutoRefreshInputs);
-});
-
-// 載入追蹤項目
-function loadTrackingItems() {
-  chrome.storage.local.get({ trackingItems: [] }, (result) => {
-    const items = result.trackingItems;
-    displayTrackingItems(items);
-    updateStats(items.length);
-  });
-}
-
-// 顯示追蹤項目
-function displayTrackingItems(items) {
-  const listContainer = document.getElementById('trackingList');
-  const emptyState = document.getElementById('emptyState');
-  
-  if (items.length === 0) {
-    emptyState.style.display = 'block';
-    return;
-  }
-  
-  emptyState.style.display = 'none';
-  
-  // 清空現有內容
-  Array.from(listContainer.children).forEach(child => {
-    if (child.id !== 'emptyState') {
-      child.remove();
+  // 自動更新開關
+  autoRefreshToggle.addEventListener('change', async function() {
+    const enabled = this.checked;
+    const interval = parseFloat(intervalSelect.value);
+    
+    try {
+      const response = await chrome.runtime.sendMessage({
+        action: "setAutoRefresh",
+        enabled: enabled,
+        interval: interval
+      });
+      
+      if (response.success) {
+        await chrome.storage.local.set({
+          autoRefreshEnabled: enabled,
+          autoRefreshInterval: interval
+        });
+        
+        await loadAutoRefreshSettings();
+        showMessage(enabled ? `自動更新已啟用，間隔 ${interval} 小時` : '自動更新已停用', 'success');
+      } else {
+        showMessage('設置失敗: ' + response.error, 'error');
+        this.checked = !enabled; // 恢復原狀態
+      }
+    } catch (error) {
+      showMessage('設置失敗: ' + error.message, 'error');
+      this.checked = !enabled; // 恢復原狀態
     }
   });
   
-  // 添加每個追蹤項目
-  items.forEach(item => {
-    const itemElement = createTrackingItemElement(item);
-    listContainer.appendChild(itemElement);
+  // 間隔選擇變更
+  intervalSelect.addEventListener('change', async function() {
+    if (autoRefreshToggle.checked) {
+      const interval = parseFloat(this.value);
+      
+      try {
+        const response = await chrome.runtime.sendMessage({
+          action: "setAutoRefresh",
+          enabled: true,
+          interval: interval
+        });
+        
+        if (response.success) {
+          await chrome.storage.local.set({ autoRefreshInterval: interval });
+          await loadAutoRefreshSettings();
+          showMessage(`自動更新間隔已更改為 ${interval} 小時`, 'success');
+        }
+      } catch (error) {
+        showMessage('設置失敗: ' + error.message, 'error');
+      }
+    }
   });
-}
-
-// 創建追蹤項目元素
-function createTrackingItemElement(item) {
-  const div = document.createElement('div');
-  div.className = 'tracking-item';
-  div.dataset.itemId = item.id;
   
-  const priceDiff = item.currentPrice - item.initialPrice;
-  const priceChangeClass = priceDiff > 0 ? 'price-up' : (priceDiff < 0 ? 'price-down' : 'price-same');
-  const priceChangeText = priceDiff === 0 ? '無變化' : 
-    (priceDiff > 0 ? `+$${priceDiff.toFixed(2)}` : `-$${Math.abs(priceDiff).toFixed(2)}`);
+  async function loadTrackingItems() {
+    try {
+      const result = await chrome.storage.local.get({ trackingItems: [] });
+      const items = result.trackingItems;
+      
+      itemsList.innerHTML = '';
+      
+      if (items.length === 0) {
+        itemsList.innerHTML = '<div class="empty-state">尚無追蹤項目<br>請在網頁上選取價格文字後右鍵選擇「加入價格追蹤」</div>';
+        return;
+      }
+      
+      items.forEach(item => {
+        const itemElement = createItemElement(item);
+        itemsList.appendChild(itemElement);
+      });
+      
+    } catch (error) {
+      console.error('載入追蹤項目失敗:', error);
+      showMessage('載入失敗: ' + error.message, 'error');
+    }
+  }
   
-  // 只顯示完整元素文字
-  const displayText = item.fullElementText ? 
-    (item.fullElementText.length > 150 ? 
-      item.fullElementText.substring(0, 150) + '...' : 
-      item.fullElementText) : 
-    item.selectedText;
-  
-  div.innerHTML = `
-    <div class="item-header">
-      <div class="item-title">${escapeHtml(item.title)}</div>
+  function createItemElement(item) {
+    const div = document.createElement('div');
+    div.className = 'item';
+    
+    // 計算價格變化
+    const priceChange = item.currentPrice - item.initialPrice;
+    const priceChangePercent = ((priceChange / item.initialPrice) * 100).toFixed(1);
+    const priceChangeClass = priceChange > 0 ? 'price-up' : priceChange < 0 ? 'price-down' : 'price-same';
+    
+    // 檢查是否有價格提醒
+    const hasAlert = item.targetPrice && item.currentPrice <= item.targetPrice && item.alertTriggered;
+    
+    div.innerHTML = `
+      <div class="item-header ${hasAlert ? 'alert-triggered' : ''}">
+        <div class="item-title">
+          <a href="${item.url}" target="_blank" title="${item.title}">
+            ${item.title.length > 50 ? item.title.substring(0, 50) + '...' : item.title}
+          </a>
+          ${hasAlert ? '<span class="alert-badge">🔔</span>' : ''}
+        </div>
+        <div class="item-domain">${item.domain}</div>
+      </div>
+      
+      <div class="price-info">
+        <div class="current-price">
+          目前價格: <span class="price">$${item.currentPrice}</span>
+        </div>
+        <div class="price-change ${priceChangeClass}">
+          ${priceChange >= 0 ? '+' : ''}$${priceChange.toFixed(2)} (${priceChangePercent >= 0 ? '+' : ''}${priceChangePercent}%)
+        </div>
+        ${item.targetPrice ? `<div class="target-price">目標價格: <span class="price">$${item.targetPrice}</span></div>` : ''}
+      </div>
+      
+      <div class="item-details">
+        <div class="detail-row">
+          <span>初始價格:</span>
+          <span>$${item.initialPrice}</span>
+        </div>
+        <div class="detail-row">
+          <span>最後更新:</span>
+          <span>${formatDate(item.lastUpdated)}</span>
+        </div>
+      </div>
+      
       <div class="item-actions">
-        <button class="refresh-btn" data-action="refresh" data-item-id="${item.id}" title="刷新價格">🔄</button>
-        <button class="visit-btn" data-action="visit" data-url="${encodeURIComponent(item.url)}" title="前往商品頁">🔗</button>
-        <button class="delete-btn" data-action="delete" data-item-id="${item.id}" title="刪除追蹤">❌</button>
+        <button class="btn btn-small update-btn" data-id="${item.id}">更新價格</button>
+        <button class="btn btn-small btn-secondary edit-target-btn" data-id="${item.id}">設定提醒</button>
+        <button class="btn btn-small btn-danger delete-btn" data-id="${item.id}">刪除</button>
       </div>
-    </div>
+    `;
     
-    <div class="item-url">
-      <a href="${item.url}" target="_blank">${item.domain}</a>
-    </div>
+    // 添加事件監聽器
+    const updateBtn = div.querySelector('.update-btn');
+    const editTargetBtn = div.querySelector('.edit-target-btn');
+    const deleteBtn = div.querySelector('.delete-btn');
     
-    <div class="element-text" title="${escapeHtml(item.fullElementText || item.selectedText)}">
-      <small>${escapeHtml(displayText)}</small>
-    </div>
+    updateBtn.addEventListener('click', () => updateSingleItem(item.id));
+    editTargetBtn.addEventListener('click', () => editTargetPrice(item.id));
+    deleteBtn.addEventListener('click', () => deleteItem(item.id));
     
-    <div class="price-info">
-      <div class="price-item">
-        <span class="price-label">現價</span>
-        <div class="price-value current-price">$${item.currentPrice.toFixed(2)}</div>
-      </div>
-      <div class="price-item">
-        <span class="price-label">初始價</span>
-        <div class="price-value initial-price">$${item.initialPrice.toFixed(2)}</div>
-      </div>
-      <div class="price-item">
-        <span class="price-label">變化</span>
-        <div class="price-value price-change ${priceChangeClass}">${priceChangeText}</div>
-      </div>
-    </div>
+    return div;
+  }
+  
+  async function updateSingleItem(itemId) {
+    const updateBtn = document.querySelector(`[data-id="${itemId}"].update-btn`);
+    updateBtn.disabled = true;
+    updateBtn.textContent = '更新中...';
     
-    <div class="last-updated">
-      最後更新: ${formatDate(item.lastUpdated)}
-    </div>
-  `;
-  
-  // 添加事件監聽器
-  const refreshBtn = div.querySelector('[data-action="refresh"]');
-  const visitBtn = div.querySelector('[data-action="visit"]');
-  const deleteBtn = div.querySelector('[data-action="delete"]');
-  
-  refreshBtn.addEventListener('click', () => refreshSinglePrice(item.id));
-  visitBtn.addEventListener('click', () => visitPage(item.url));
-  deleteBtn.addEventListener('click', () => deleteItem(item.id));
-  
-  return div;
-}
-
-// 刷新所有價格
-async function refreshAllPrices() {
-  const refreshBtn = document.getElementById('refreshAll');
-  const refreshStatus = document.getElementById('refreshStatus');
-  
-  refreshBtn.disabled = true;
-  refreshBtn.textContent = '⏳';
-  refreshStatus.textContent = '刷新中...';
-  
-  try {
-    const result = await chrome.storage.local.get({ trackingItems: [] });
-    const items = result.trackingItems;
+    try {
+      const result = await chrome.storage.local.get({ trackingItems: [] });
+      const items = result.trackingItems;
+      const item = items.find(i => i.id === itemId);
+      
+      if (!item) {
+        showMessage('找不到項目', 'error');
+        return;
+      }
+      
+      const response = await chrome.runtime.sendMessage({
+        action: "updatePrice",
+        item: item
+      });
+      
+      if (response.success) {
+        // 更新項目資料
+        item.currentPrice = response.price;
+        item.lastUpdated = new Date().toISOString();
+        item.fullElementText = response.fullText;
+        item.priceHistory = item.priceHistory || [];
+        item.priceHistory.push({
+          price: response.price,
+          date: new Date().toISOString(),
+          fullText: response.fullText
+        });
+        
+        // 檢查價格提醒
+        if (item.targetPrice && response.price <= item.targetPrice && !item.alertTriggered) {
+          item.alertTriggered = true;
+          showMessage(`價格提醒！${item.title} 已達到目標價格 $${item.targetPrice}`, 'success');
+        } else if (item.targetPrice && response.price > item.targetPrice) {
+          item.alertTriggered = false;
+        }
+        
+        // 保存更新
+        await chrome.storage.local.set({ trackingItems: items });
+        
+        // 重新載入顯示
+        await loadTrackingItems();
+        await checkAndDisplayAlerts();
+        
+        showMessage(`價格更新成功！新價格: $${response.price}`, 'success');
+      } else {
+        showMessage('更新失敗: ' + response.error, 'error');
+      }
+    } catch (error) {
+      showMessage('更新失敗: ' + error.message, 'error');
+    }
     
-    if (items.length === 0) {
-      refreshStatus.textContent = '沒有項目需要刷新';
+    updateBtn.disabled = false;
+    updateBtn.textContent = '更新價格';
+  }
+  
+  async function editTargetPrice(itemId) {
+    try {
+      const result = await chrome.storage.local.get({ trackingItems: [] });
+      const items = result.trackingItems;
+      const item = items.find(i => i.id === itemId);
+      
+      if (!item) {
+        showMessage('找不到項目', 'error');
+        return;
+      }
+      
+      const currentTarget = item.targetPrice || '';
+      const newTarget = prompt(
+        `設定價格提醒\n\n商品: ${item.title}\n當前價格: $${item.currentPrice}\n\n請輸入目標價格（當價格低於此值時會通知）：\n留空則取消提醒`,
+        currentTarget
+      );
+      
+      if (newTarget === null) return; // 用戶取消
+      
+      if (newTarget === '') {
+        // 取消提醒
+        item.targetPrice = null;
+        item.alertTriggered = false;
+        showMessage('價格提醒已取消', 'success');
+      } else {
+        const targetPrice = parseFloat(newTarget);
+        if (isNaN(targetPrice) || targetPrice <= 0) {
+          showMessage('請輸入有效的價格', 'error');
+          return;
+        }
+        
+        item.targetPrice = targetPrice;
+        item.alertTriggered = item.currentPrice <= targetPrice;
+        showMessage(`價格提醒已設定為 $${targetPrice}`, 'success');
+      }
+      
+      await chrome.storage.local.set({ trackingItems: items });
+      await loadTrackingItems();
+      await checkAndDisplayAlerts();
+      
+    } catch (error) {
+      showMessage('設定失敗: ' + error.message, 'error');
+    }
+  }
+  
+  async function deleteItem(itemId) {
+    if (!confirm('確定要刪除這個追蹤項目嗎？')) {
       return;
     }
     
-    const updatedItems = [];
-    let successCount = 0;
-    let errorCount = 0;
-    
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      refreshStatus.textContent = `刷新中... (${i + 1}/${items.length})`;
+    try {
+      const result = await chrome.storage.local.get({ trackingItems: [] });
+      const items = result.trackingItems.filter(item => item.id !== itemId);
       
-      try {
-        // 直接在這裡執行價格更新邏輯
-        const response = await fetch(item.url);
-        const html = await response.text();
-        
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(html, 'text/html');
-        
-        const priceElement = doc.querySelector(item.selector);
-        if (priceElement) {
-          const fullText = priceElement.textContent || priceElement.innerText || '';
-          const currentPrice = parsePrice(fullText);
-          
-          if (currentPrice > 0) {
-            item.currentPrice = currentPrice;
-            item.lastUpdated = new Date().toISOString();
-            item.fullElementText = fullText.trim();
-            item.priceHistory = item.priceHistory || [];
-            item.priceHistory.push({
-              price: currentPrice,
-              date: new Date().toISOString(),
-              fullText: fullText.trim()
-            });
-            
-            if (item.priceHistory.length > 50) {
-              item.priceHistory = item.priceHistory.slice(-50);
-            }
-            
-            successCount++;
-          } else {
-            errorCount++;
-          }
-        } else {
-          errorCount++;
-        }
-        
-        updatedItems.push(item);
-        
-        // 添加延遲避免請求過於頻繁
-        if (i < items.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        }
-        
-      } catch (error) {
-        console.error('更新價格失敗:', error);
-        updatedItems.push(item);
-        errorCount++;
-      }
+      await chrome.storage.local.set({ trackingItems: items });
+      await loadTrackingItems();
+      await checkAndDisplayAlerts();
+      
+      showMessage('項目已刪除', 'success');
+    } catch (error) {
+      showMessage('刪除失敗: ' + error.message, 'error');
     }
-    
-    // 儲存更新後的資料
-    await chrome.storage.local.set({ trackingItems: updatedItems });
-    
-    // 重新顯示
-    displayTrackingItems(updatedItems);
-    
-    // 顯示結果
-    refreshStatus.textContent = `完成! 成功: ${successCount}, 失敗: ${errorCount}`;
-    setTimeout(() => {
-      refreshStatus.textContent = '';
-    }, 3000);
-    
-  } catch (error) {
-    console.error('刷新價格時發生錯誤:', error);
-    refreshStatus.textContent = '刷新失敗';
-    setTimeout(() => {
-      refreshStatus.textContent = '';
-    }, 3000);
-  } finally {
-    refreshBtn.disabled = false;
-    refreshBtn.textContent = '🔄';
   }
-}
-
-// 刷新單個價格
-async function refreshSinglePrice(itemId) {
-  const itemElement = document.querySelector(`[data-item-id="${itemId}"]`);
-  if (!itemElement) return;
   
-  itemElement.classList.add('loading');
-  
-  try {
-    const result = await chrome.storage.local.get({ trackingItems: [] });
-    const items = result.trackingItems;
-    const itemIndex = items.findIndex(item => item.id === itemId);
-    
-    if (itemIndex === -1) return;
-    
-    const item = items[itemIndex];
-    
-    // 直接執行價格更新
-    const response = await fetch(item.url);
-    const html = await response.text();
-    
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(html, 'text/html');
-    
-    const priceElement = doc.querySelector(item.selector);
-    if (priceElement) {
-      const fullText = priceElement.textContent || priceElement.innerText || '';
-      const currentPrice = parsePrice(fullText);
+  async function loadAutoRefreshSettings() {
+    try {
+      const response = await chrome.runtime.sendMessage({ action: "getAutoRefreshStatus" });
       
-      if (currentPrice > 0) {
-        item.currentPrice = currentPrice;
-        item.lastUpdated = new Date().toISOString();
-        item.fullElementText = fullText.trim();
-        item.priceHistory = item.priceHistory || [];
-        item.priceHistory.push({
-          price: currentPrice,
-          date: new Date().toISOString(),
-          fullText: fullText.trim()
-        });
-        
-        if (item.priceHistory.length > 50) {
-          item.priceHistory = item.priceHistory.slice(-50);
+      autoRefreshToggle.checked = response.autoRefreshEnabled;
+      intervalSelect.value = response.autoRefreshInterval;
+      
+      if (response.autoRefreshEnabled) {
+        autoRefreshStatus.textContent = `自動更新已啟用，間隔 ${response.autoRefreshInterval} 小時`;
+        if (response.lastAutoRefresh) {
+          autoRefreshStatus.textContent += `，上次更新: ${formatDate(response.lastAutoRefresh)}`;
         }
-        
-        items[itemIndex] = item;
-        await chrome.storage.local.set({ trackingItems: items });
-        
-        // 重新創建該項目的元素
-        const newElement = createTrackingItemElement(item);
-        itemElement.parentNode.replaceChild(newElement, itemElement);
-        
-        showToast(`${item.title} 價格已更新: $${currentPrice.toFixed(2)}`);
       } else {
-        showToast('無法解析價格', 'error');
+        autoRefreshStatus.textContent = '自動更新已停用';
       }
-    } else {
-      showToast('找不到價格元素', 'error');
+    } catch (error) {
+      console.error('載入自動更新設置失敗:', error);
     }
-    
-  } catch (error) {
-    console.error('刷新單個價格失敗:', error);
-    showToast('刷新失敗: ' + error.message, 'error');
-  } finally {
-    itemElement.classList.remove('loading');
-  }
-}
-
-// 刪除項目
-async function deleteItem(itemId) {
-  if (!confirm('確定要刪除這個追蹤項目嗎？')) return;
-  
-  try {
-    const result = await chrome.storage.local.get({ trackingItems: [] });
-    const items = result.trackingItems.filter(item => item.id !== itemId);
-    
-    await chrome.storage.local.set({ trackingItems: items });
-    
-    // 立即重新載入和顯示
-    displayTrackingItems(items);
-    updateStats(items.length);
-    
-    showToast('項目已刪除');
-  } catch (error) {
-    console.error('刪除項目失敗:', error);
-    showToast('刪除失敗', 'error');
-  }
-}
-
-// 前往商品頁
-function visitPage(url) {
-  chrome.tabs.create({ url: url });
-}
-
-// 清空所有追蹤
-async function clearAllTracking() {
-  if (!confirm('確定要清空所有追蹤項目嗎？此操作無法復原！')) return;
-  
-  try {
-    await chrome.storage.local.set({ trackingItems: [] });
-    displayTrackingItems([]);
-    updateStats(0);
-    showToast('所有追蹤項目已清空');
-  } catch (error) {
-    console.error('清空失敗:', error);
-    showToast('清空失敗', 'error');
-  }
-}
-
-// 自動更新相關函數
-function toggleAutoRefreshPanel() {
-  const panel = document.getElementById('autoRefreshPanel');
-  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
-}
-
-function hideAutoRefreshPanel() {
-  document.getElementById('autoRefreshPanel').style.display = 'none';
-}
-
-function toggleAutoRefreshInputs() {
-  const enabled = document.getElementById('enableAutoRefresh').checked;
-  document.getElementById('refreshInterval').disabled = !enabled;
-}
-
-async function loadAutoRefreshSettings() {
-  const result = await chrome.storage.local.get({
-    autoRefreshEnabled: false,
-    autoRefreshInterval: 1
-  });
-  
-  document.getElementById('enableAutoRefresh').checked = result.autoRefreshEnabled;
-  document.getElementById('refreshInterval').value = result.autoRefreshInterval;
-  toggleAutoRefreshInputs();
-  
-  if (result.autoRefreshEnabled) {
-    startAutoRefresh(result.autoRefreshInterval);
-    updateAutoRefreshStatus(result.autoRefreshInterval);
-  }
-}
-
-async function saveAutoRefreshSettings() {
-  const enabled = document.getElementById('enableAutoRefresh').checked;
-  const interval = parseFloat(document.getElementById('refreshInterval').value);
-  
-  if (interval < 0.1 || interval > 24) {
-    showToast('間隔時間必須在 0.1 到 24 小時之間', 'error');
-    return;
   }
   
-  await chrome.storage.local.set({
-    autoRefreshEnabled: enabled,
-    autoRefreshInterval: interval
-  });
-  
-  if (enabled) {
-    startAutoRefresh(interval);
-    updateAutoRefreshStatus(interval);
-    showToast(`自動更新已啟用，間隔 ${interval} 小時`);
-  } else {
-    stopAutoRefresh();
-    updateAutoRefreshStatus(0);
-    showToast('自動更新已停用');
-  }
-  
-  hideAutoRefreshPanel();
-}
-
-function startAutoRefresh(intervalHours) {
-  stopAutoRefresh();
-  autoRefreshInterval = setInterval(() => {
-    refreshAllPrices();
-  }, intervalHours * 60 * 60 * 1000);
-}
-
-function stopAutoRefresh() {
-  if (autoRefreshInterval) {
-    clearInterval(autoRefreshInterval);
-    autoRefreshInterval = null;
-  }
-}
-
-function updateAutoRefreshStatus(intervalHours) {
-  const statusElement = document.getElementById('autoRefreshStatus');
-  if (intervalHours > 0) {
-    statusElement.textContent = `自動更新已啟用 (每 ${intervalHours} 小時)`;
-  } else {
-    statusElement.textContent = '自動更新已停用';
-  }
-}
-
-// 匯出資料
-async function exportData() {
-  try {
-    const result = await chrome.storage.local.get({ trackingItems: [] });
-    const data = {
-      version: "1.0",
-      exportDate: new Date().toISOString(),
-      trackingItems: result.trackingItems
-    };
-    
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `price-tracker-${new Date().toISOString().split('T')[0]}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    
-    showToast('資料已匯出');
-  } catch (error) {
-    console.error('匯出失敗:', error);
-    showToast('匯出失敗', 'error');
-  }
-}
-
-// 匯入資料
-async function importData(event) {
-  const file = event.target.files[0];
-  if (!file) return;
-  
-  try {
-    const text = await file.text();
-    const data = JSON.parse(text);
-    
-    if (!data.trackingItems || !Array.isArray(data.trackingItems)) {
-      throw new Error('無效的資料格式');
-    }
-    
-    // 驗證資料結構
-    for (const item of data.trackingItems) {
-      if (!item.id || !item.url || !item.selector || typeof item.initialPrice !== 'number') {
-        throw new Error('資料格式不完整');
-      }
-    }
-    
-    const itemCount = data.trackingItems.length;
-    if (confirm(`即將匯入 ${itemCount} 個追蹤項目，是否繼續？這將覆蓋現有資料。`)) {
-      await chrome.storage.local.set({ trackingItems: data.trackingItems });
-      displayTrackingItems(data.trackingItems);
-      updateStats(data.trackingItems.length);
-      showToast(`成功匯入 ${itemCount} 個項目`);
-    }
-    
-  } catch (error) {
-    console.error('匯入失敗:', error);
-    showToast('匯入失敗：' + error.message, 'error');
-  }
-  
-  // 清空文件輸入
-  event.target.value = '';
-}
-
-// 更新統計資訊
-function updateStats(count) {
-  document.getElementById('itemCount').textContent = `${count} 個追蹤項目`;
-}
-
-// 價格解析函數
-function parsePrice(text) {
-  if (!text) return 0;
-  
-  // 移除所有空白字符
-  const cleanText = text.replace(/\s+/g, ' ').trim();
-  
-  // 各種價格模式
-  const patterns = [
-    // 標準貨幣格式：$123.45, NT$123, USD 123.45
-    /(?:[$¥€£₹₩¢]|NT\$|USD|EUR|GBP|JPY|CNY|TWD)\s*([0-9,]+(?:\.[0-9]{1,2})?)/i,
-    // 數字後跟貨幣：123.45 USD, 123元
-    /([0-9,]+(?:\.[0-9]{1,2})?)\s*(?:USD|EUR|GBP|JPY|CNY|TWD|元|dollar|dollars)/i,
-    // 純數字（帶小數點）
-    /([0-9,]+\.[0-9]{1,2})/,
-    // 純整數（較大的數字，可能是價格）
-    /([0-9,]{3,})/,
-    // 任何數字
-    /([0-9,]+(?:\.[0-9]+)?)/
-  ];
-  
-  for (const pattern of patterns) {
-    const match = cleanText.match(pattern);
-    if (match) {
-      const numberStr = match[1].replace(/,/g, '');
-      const number = parseFloat(numberStr);
+  async function checkAndDisplayAlerts() {
+    try {
+      const result = await chrome.storage.local.get({ trackingItems: [] });
+      const items = result.trackingItems;
       
-      // 基本驗證：價格應該是正數且合理範圍
-      if (number > 0 && number < 1000000) {
-        return number;
+      const alertItems = items.filter(item => 
+        item.targetPrice && item.currentPrice <= item.targetPrice && item.alertTriggered
+      );
+      
+      if (alertItems.length > 0) {
+        alertsSection.style.display = 'block';
+        alertsList.innerHTML = '';
+        
+        alertItems.forEach(item => {
+          const alertDiv = document.createElement('div');
+          alertDiv.className = 'alert-item';
+          alertDiv.innerHTML = `
+            <div class="alert-title">${item.title}</div>
+            <div class="alert-prices">
+              目標價格: $${item.targetPrice} | 當前價格: $${item.currentPrice}
+            </div>
+            <button class="btn btn-small dismiss-alert-btn" data-id="${item.id}">關閉提醒</button>
+          `;
+          
+          const dismissBtn = alertDiv.querySelector('.dismiss-alert-btn');
+          dismissBtn.addEventListener('click', () => dismissAlert(item.id));
+          
+          alertsList.appendChild(alertDiv);
+        });
+      } else {
+        alertsSection.style.display = 'none';
       }
+    } catch (error) {
+      console.error('檢查提醒失敗:', error);
     }
   }
   
-  return 0;
-}
-
-// 顯示提示訊息
-function showToast(message, type = 'success') {
-  // 移除現有的 toast
-  const existingToast = document.querySelector('.toast');
-  if (existingToast) {
-    existingToast.remove();
+  async function dismissAlert(itemId) {
+    try {
+      const result = await chrome.storage.local.get({ trackingItems: [] });
+      const items = result.trackingItems;
+      const item = items.find(i => i.id === itemId);
+      
+      if (item) {
+        item.alertTriggered = false;
+        await chrome.storage.local.set({ trackingItems: items });
+        await loadTrackingItems();
+        await checkAndDisplayAlerts();
+        showMessage('提醒已關閉', 'success');
+      }
+    } catch (error) {
+      showMessage('操作失敗: ' + error.message, 'error');
+    }
   }
   
-  const toast = document.createElement('div');
-  toast.className = `toast toast-${type}`;
-  toast.textContent = message;
-  
-  document.body.appendChild(toast);
-  
-  // 3秒後自動移除
-  setTimeout(() => {
-    if (toast.parentNode) {
-      toast.style.animation = 'slideOut 0.3s ease';
-      setTimeout(() => {
-        if (toast.parentNode) {
-          toast.remove();
-        }
-      }, 300);
-    }
-  }, 3000);
-}
-
-// 工具函數
-function escapeHtml(text) {
-  if (!text) return '';
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
-
-function formatDate(dateString) {
-  if (!dateString) return '未知';
-  
-  try {
+  function formatDate(dateString) {
     const date = new Date(dateString);
-    return date.toLocaleString('zh-TW', {
+    const now = new Date();
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+    
+    if (diffMins < 1) return '剛剛';
+    if (diffMins < 60) return `${diffMins} 分鐘前`;
+    if (diffHours < 24) return `${diffHours} 小時前`;
+    if (diffDays < 7) return `${diffDays} 天前`;
+    
+    return date.toLocaleDateString('zh-TW', {
+      year: 'numeric',
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit'
     });
+  }
+  
+  function showMessage(message, type = 'info') {
+    // 移除現有的訊息
+    const existingMessage = document.querySelector('.message');
+    if (existingMessage) {
+      existingMessage.remove();
+    }
+    
+    // 創建新訊息
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message message-${type}`;
+    messageDiv.textContent = message;
+    
+    // 插入到頁面頂部
+    document.body.insertBefore(messageDiv, document.body.firstChild);
+    
+    // 3秒後自動移除
+    setTimeout(() => {
+      if (messageDiv.parentNode) {
+        messageDiv.remove();
+      }
+    }, 3000);
+  }
+});
+
+// 監聽頁面可見性變化，當popup重新打開時檢查提醒
+document.addEventListener('visibilitychange', async function() {
+  if (!document.hidden) {
+    // 頁面變為可見時，重新檢查提醒
+    const alertsSection = document.getElementById('alertsSection');
+    if (alertsSection) {
+      await checkAndDisplayAlerts();
+    }
+  }
+});
+
+async function checkAndDisplayAlerts() {
+  try {
+    const result = await chrome.storage.local.get({ trackingItems: [] });
+    const items = result.trackingItems;
+    
+    const alertItems = items.filter(item => 
+      item.targetPrice && item.currentPrice <= item.targetPrice && item.alertTriggered
+    );
+    
+    const alertsSection = document.getElementById('alertsSection');
+    const alertsList = document.getElementById('alertsList');
+    
+    if (alertItems.length > 0) {
+      alertsSection.style.display = 'block';
+      alertsList.innerHTML = '';
+      
+      alertItems.forEach(item => {
+        const alertDiv = document.createElement('div');
+        alertDiv.className = 'alert-item';
+        alertDiv.innerHTML = `
+          <div class="alert-title">${item.title}</div>
+          <div class="alert-prices">
+            目標價格: $${item.targetPrice} | 當前價格: $${item.currentPrice}
+          </div>
+          <button class="btn btn-small dismiss-alert-btn" data-id="${item.id}">關閉提醒</button>
+        `;
+        
+        const dismissBtn = alertDiv.querySelector('.dismiss-alert-btn');
+        dismissBtn.addEventListener('click', () => dismissAlert(item.id));
+        
+        alertsList.appendChild(alertDiv);
+      });
+    } else {
+      alertsSection.style.display = 'none';
+    }
   } catch (error) {
-    return '日期錯誤';
+    console.error('檢查提醒失敗:', error);
   }
 }
 
-// 鍵盤快捷鍵
-document.addEventListener('keydown', function(event) {
-  // Ctrl+R 或 Cmd+R: 刷新所有價格
-  if ((event.ctrlKey || event.metaKey) && event.key === 'r') {
-    event.preventDefault();
-    refreshAllPrices();
+async function dismissAlert(itemId) {
+  try {
+    const result = await chrome.storage.local.get({ trackingItems: [] });
+    const items = result.trackingItems;
+    const item = items.find(i => i.id === itemId);
+    
+    if (item) {
+      item.alertTriggered = false;
+      await chrome.storage.local.set({ trackingItems: items });
+      // 重新載入顯示
+      const loadTrackingItems = window.loadTrackingItems || (() => {
+        // 重新載入追蹤項目的邏輯
+        window.location.reload();
+      });
+      
+      await loadTrackingItems();
+      await checkAndDisplayAlerts();
+      
+      // 顯示成功訊息
+      const showMessage = window.showMessage || ((message, type) => {
+        console.log(`${type}: ${message}`);
+      });
+      showMessage('提醒已關閉', 'success');
+    }
+  } catch (error) {
+    const showMessage = window.showMessage || ((message, type) => {
+      console.log(`${type}: ${message}`);
+    });
+    showMessage('操作失敗: ' + error.message, 'error');
   }
-  
-  // Ctrl+E 或 Cmd+E: 匯出資料
-  if ((event.ctrlKey || event.metaKey) && event.key === 'e') {
-    event.preventDefault();
-    exportData();
-  }
-  
-  // Ctrl+I 或 Cmd+I: 匯入資料
-  if ((event.ctrlKey || event.metaKey) && event.key === 'i') {
-    event.preventDefault();
-    document.getElementById('importFile').click();
-  }
-  
-  // Ctrl+A 或 Cmd+A: 自動更新設定
-  if ((event.ctrlKey || event.metaKey) && event.key === 'a') {
-    event.preventDefault();
-    toggleAutoRefreshPanel();
-  }
-});
-
-// 在擴充套件關閉時清理
-window.addEventListener('beforeunload', () => {
-  stopAutoRefresh();
-});
-
-// 頁面可見性變化時的處理
-document.addEventListener('visibilitychange', function() {
-  if (document.visibilityState === 'visible') {
-    // 當頁面變為可見時，重新載入資料
-    loadTrackingItems();
-    loadAutoRefreshSettings();
-  }
-});
+}
 
