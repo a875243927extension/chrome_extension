@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="header">
+    <h1>價格追蹤器</h1>
+    <div class="header-buttons">
+      <button id="refreshAll" title="刷新所有價格">🔄</button>
+      <button id="autoRefreshBtn" title="自動更新設定">⏰</button>
+      <button id="clearAll" title="清空所有追蹤">🗑️</button>
+      <button id="exportData" title="匯出資料">📤</button>
+      <button id="importData" title="匯入資料">📥</button>
+    </div>
+  </div>
+  
+  <!-- 自動更新設定面板 -->
+  <div id="autoRefreshPanel" class="auto-refresh-panel" style="display: none;">
+    <div class="panel-header">
+      <h3>自動更新設定</h3>
+      <button id="closePanel" class="close-btn">✕</button>
+    </div>
+    <div class="panel-content">
+      <label class="checkbox-label">
+        <input type="checkbox" id="enableAutoRefresh">
+        <span>啟用自動更新</span>
+      </label>
+      <div class="time-setting">
+        <label for="refreshInterval">更新間隔 (小時):</label>
+        <input type="number" id="refreshInterval" min="0.1" max="24" step="0.1" value="1">
+      </div>
+      <div class="panel-buttons">
+        <button id="saveAutoRefresh" class="save-btn">儲存</button>
+        <button id="cancelAutoRefresh" class="cancel-btn">取消</button>
+      </div>
+      <div id="autoRefreshStatus" class="auto-refresh-status"></div>
+    </div>
+  </div>
+  
+  <div class="stats">
+    <span id="itemCount">0 個追蹤項目</span>
+    <span id="refreshStatus" class="refresh-status"></span>
+  </div>
+  
+  <div id="trackingList" class="tracking-list">
+    <div id="emptyState" class="empty-state">
+      <p>尚未追蹤任何價格</p>
+      <p>在網頁上反白選取價格，然後右鍵選擇「加入價格追蹤」</p>
+    </div>
+  </div>
+  
+  <input type="file" id="importFile" accept=".json" style="display: none;">
+  
+  <script src="popup.js"></script>
+</body>
+</html>
