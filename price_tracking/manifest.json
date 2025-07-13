@@ -4,9 +4,16 @@
   "version": "1.0",
   "description": "追蹤網頁商品價格變化",
   
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png", 
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  
   "permissions": [
     "storage",
-    "contextMenus",
+    "contextMenus", 
     "scripting",
     "activeTab",
     "alarms",
@@ -31,6 +38,11 @@
   
   "action": {
     "default_popup": "popup.html",
-    "default_title": "價格追蹤器"
+    "default_title": "價格追蹤器",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png"
+    }
   }
 }
