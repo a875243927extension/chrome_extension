@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "價格追蹤器",
+  "version": "1.0",
+  "description": "追蹤網頁商品價格變化",
+  
+  "permissions": [
+    "storage",
+    "contextMenus",
+    "scripting",
+    "activeTab",
+    "alarms",
+    "notifications"
+  ],
+  
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  
+  "background": {
+    "service_worker": "background.js"
+  },
+  
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_end"
+    }
+  ],
+  
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "價格追蹤器"
+  }
+}
